@@ -1,0 +1,15 @@
+// The lexer flags bad identifiers, constants and I/O statements
+begin program:
+begin VarDecl:
+(count, int);
+(count, char);
+(Total, int);
+(my_var_x, int);
+(while, int);
+(grade, float);
+end VarDecl
+count := (1012, 2);
+count := (777, 8);
+print("count = @, @", count);
+scan("@, @", count, grade);
+end program

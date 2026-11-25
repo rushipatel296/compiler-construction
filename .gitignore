@@ -1,0 +1,9 @@
+*.tab.c
+*.tab.h
+lex.yy.c
+*.o
+lexer/lexer
+parser/parser
+ast/ast
+codegen/codegen
+interpreter/interpreter

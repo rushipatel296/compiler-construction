@@ -1,0 +1,9 @@
+begin program:
+begin VarDecl:
+(n, int);
+(c, char);
+end VarDecl
+c := 'x';
+n := (3, 10);
+n := n + c;
+end program

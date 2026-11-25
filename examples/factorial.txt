@@ -1,0 +1,15 @@
+begin program:
+begin VarDecl:
+(n, int);
+(i, int);
+(fact, int);
+end VarDecl
+/* factorial of n using a for loop */
+n := (6, 10);
+fact := (1, 10);
+for i := (1, 10) to n inc (1, 10) do
+begin
+    fact *= i;
+end;
+print("n! = @", fact);
+end program

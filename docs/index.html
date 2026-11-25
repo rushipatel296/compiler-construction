@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compiler Playground</title>
+<meta name="description" content="A small compiler written in Flex, Bison and C, running in the browser via WebAssembly: tokens, AST, three-address code and program output.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #f0f2f5;
+  --border: #dfe3e8;
+  --text: #1c2330;
+  --muted: #667085;
+  --accent: #4f46e5;
+  --on-accent: #ffffff;
+  --accent-soft: #eef0ff;
+  --ok: #16803c;
+  --ok-soft: #e7f6ec;
+  --err: #c2283d;
+  --err-soft: #fdecee;
+  --warn: #a15c07;
+  --c-keyword: #7c3aed;
+  --c-ident: #0f6cbd;
+  --c-const: #b45309;
+  --c-op: #be185d;
+  --c-sep: #64748b;
+  --c-io: #047857;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1117; --panel: #161b22; --panel-2: #1d232c; --border: #2b323c;
+    --text: #e6edf3; --muted: #8b949e; --accent: #8b8cff; --on-accent: #0e1117; --accent-soft: #23264a;
+    --ok: #3fb950; --ok-soft: #12261a; --err: #ff6b7d; --err-soft: #2d151a; --warn: #e3a341;
+    --c-keyword: #c4a1ff; --c-ident: #79c0ff; --c-const: #f0b44c; --c-op: #ff8cc6;
+    --c-sep: #8b949e; --c-io: #56d4a8; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1117; --panel: #161b22; --panel-2: #1d232c; --border: #2b323c;
+  --text: #e6edf3; --muted: #8b949e; --accent: #8b8cff; --on-accent: #0e1117; --accent-soft: #23264a;
+  --ok: #3fb950; --ok-soft: #12261a; --err: #ff6b7d; --err-soft: #2d151a; --warn: #e3a341;
+  --c-keyword: #c4a1ff; --c-ident: #79c0ff; --c-const: #f0b44c; --c-op: #ff8cc6;
+  --c-sep: #8b949e; --c-io: #56d4a8; --shadow: none;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.5 Inter, system-ui, -apple-system, Segoe UI, sans-serif;
+  min-height: 100vh; display: flex; flex-direction: column;
+}
+code, pre, textarea, .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+.logo {
+  width: 28px; height: 28px; border-radius: 7px; background: var(--accent); color: var(--on-accent);
+  display: grid; place-items: center; font: 600 13px "JetBrains Mono", monospace;
+}
+.sub { color: var(--muted); font-size: 13px; }
+.spacer { flex: 1; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.iconbtn {
+  background: none; border: 1px solid var(--border); color: var(--text); border-radius: 8px;
+  padding: 6px 10px; cursor: pointer; font: inherit; font-size: 13px;
+}
+.iconbtn:hover { background: var(--panel-2); }
+
+main {
+  flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  gap: 16px; padding: 16px 20px 20px; height: calc(100vh - 64px); min-height: 560px;
+}
+.card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.toolbar {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.toolbar .title { font-weight: 600; font-size: 13px; }
+select, .btn {
+  font: inherit; font-size: 13px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text); padding: 6px 10px;
+}
+.btn { cursor: pointer; }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.kbd { color: var(--muted); font-size: 12px; }
+
+.editor { position: relative; flex: 1; display: flex; min-height: 420px; background: var(--panel); }
+.gutter {
+  padding: 12px 8px 12px 12px; text-align: right; color: var(--muted); user-select: none;
+  font: 13px/1.6 "JetBrains Mono", monospace; background: var(--panel-2); min-width: 44px;
+  overflow: hidden; border-right: 1px solid var(--border);
+}
+.gutter div.bad { color: var(--err); font-weight: 600; }
+.gutter div.bad::before { content: "\25CF "; font-size: 9px; vertical-align: 2px; }
+textarea {
+  flex: 1; resize: none; border: 0; outline: none; padding: 12px; margin: 0;
+  background: transparent; color: var(--text); font-size: 13px; line-height: 1.6;
+  white-space: pre; overflow: auto; tab-size: 4;
+}
+
+.stages { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.stage {
+  display: flex; align-items: center; gap: 8px; white-space: nowrap;
+  padding: 7px 11px; border-radius: 9px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 13px;
+}
+.stage[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.stage .n { color: var(--muted); font: 500 11px "JetBrains Mono", monospace; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex: none; }
+.dot.ok { background: var(--ok); }
+.dot.err { background: var(--err); }
+.dot.busy { background: var(--accent); animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+.arrow { color: var(--muted); align-self: center; font-size: 12px; }
+
+.out { flex: 1; overflow: auto; padding: 14px 16px; min-height: 0; }
+.desc { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.banner {
+  border-radius: 9px; padding: 9px 12px; margin-bottom: 12px; font-size: 13px;
+  display: flex; gap: 8px; align-items: baseline;
+}
+.banner.ok { background: var(--ok-soft); color: var(--ok); }
+.banner.err { background: var(--err-soft); color: var(--err); }
+.banner .mono { font-size: 12.5px; }
+.stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.stat { background: var(--panel-2); border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+.stat b { font-weight: 600; }
+
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 10px; border-bottom: 1px solid var(--border); position: sticky; top: -14px; background: var(--panel); }
+td { padding: 5px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+td.lex { font-family: "JetBrains Mono", monospace; font-size: 12.5px; word-break: break-all; }
+tr.bad td { background: var(--err-soft); }
+.pill {
+  display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; font-weight: 500;
+  border: 1px solid currentColor; white-space: nowrap;
+}
+.t-keyword { color: var(--c-keyword); }
+.t-ident { color: var(--c-ident); }
+.t-const { color: var(--c-const); }
+.t-op { color: var(--c-op); }
+.t-sep { color: var(--c-sep); }
+.t-io { color: var(--c-io); }
+.t-err { color: var(--err); }
+.filter { display: flex; gap: 6px; align-items: center; margin-left: auto; font-size: 12.5px; color: var(--muted); }
+
+pre.code {
+  margin: 0; padding: 12px 14px; background: var(--panel-2); border-radius: 9px;
+  font-size: 12.5px; line-height: 1.65; overflow: auto;
+}
+pre.code .lbl { color: var(--accent); font-weight: 600; }
+pre.code .tmp { color: var(--c-const); }
+pre.code .kw { color: var(--c-keyword); }
+pre.code .str { color: var(--c-io); }
+
+.tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+.tree ul { margin-left: 9px; padding-left: 16px; border-left: 1px dashed var(--border); }
+.tree li { position: relative; padding: 2px 0; }
+.tree ul > li::before {
+  content: ""; position: absolute; left: -16px; top: 13px; width: 12px; border-top: 1px dashed var(--border);
+}
+.node {
+  display: inline-flex; align-items: center; gap: 6px; font: 12.5px "JetBrains Mono", monospace;
+  padding: 2px 8px; border-radius: 6px; background: var(--panel-2);
+}
+.node.op { color: var(--c-op); }
+.node.stmt { color: var(--c-keyword); font-weight: 600; }
+.node.leaf { background: transparent; padding: 2px 4px; }
+.node.group { color: var(--muted); background: transparent; font-family: Inter, sans-serif; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.node.decl { color: var(--c-ident); }
+.node .ty { color: var(--c-keyword); }
+details.raw { margin-top: 14px; }
+details.raw summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+details.raw pre { margin-top: 8px; white-space: pre-wrap; word-break: break-all; }
+
+.console {
+  background: #0d1117; color: #e6edf3; border-radius: 9px; padding: 12px 14px; margin: 0 0 14px;
+  font-size: 13px; line-height: 1.6; min-height: 48px; white-space: pre-wrap;
+}
+.console .none { color: #8b949e; font-style: italic; }
+h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+.note { color: var(--warn); font-size: 12.5px; margin: -6px 0 12px; }
+
+.help { padding: 0 20px 20px; }
+.help details { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+.help summary { cursor: pointer; font-weight: 600; }
+.help .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 24px; margin-top: 10px; font-size: 13px; }
+.help code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.help ul { margin: 4px 0; padding-left: 18px; }
+
+@media (max-width: 900px) {
+  main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px; height: auto; }
+  .out { max-height: 70vh; }
+  header { padding: 12px 16px; }
+  .help { padding: 0 16px 16px; }
+  .editor { min-height: 320px; }
+  .kbd { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="logo">&gt;_</div>Compiler Playground</div>
+  <span class="sub">Flex + Bison + C, compiled to WebAssembly and running in your browser</span>
+  <span class="spacer"></span>
+  <a href="https://github.com/rushipatel296/compiler-construction" target="_blank" rel="noopener">Source on GitHub</a>
+  <button class="iconbtn" id="theme" title="Toggle theme">Theme</button>
+</header>
+
+<main>
+  <section class="card">
+    <div class="toolbar">
+      <span class="title">Source</span>
+      <select id="examples" aria-label="Load an example"></select>
+      <span class="spacer"></span>
+      <span class="kbd">Ctrl + Enter</span>
+      <button class="btn primary" id="run">Compile &amp; run</button>
+    </div>
+    <div class="editor">
+      <div class="gutter" id="gutter"></div>
+      <textarea id="src" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Source code"></textarea>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="stages" role="tablist" id="stages"></div>
+    <div class="out" id="out"></div>
+  </section>
+</main>
+
+<div class="help">
+  <details>
+    <summary>Language cheat sheet</summary>
+    <div class="cols">
+      <div>
+        <b>Program shape</b>
+        <ul>
+          <li><code>begin program:</code> &hellip; <code>end program</code></li>
+          <li>Declarations: <code>begin VarDecl:</code> <code>(x, int);</code> <code>end VarDecl</code></li>
+          <li>Types: <code>int</code>, <code>char</code>; arrays <code>(a[10], int);</code></li>
+        </ul>
+      </div>
+      <div>
+        <b>Values</b>
+        <ul>
+          <li>Integers carry their base: <code>(1010, 2)</code>, <code>(17, 8)</code>, <code>(42, 10)</code></li>
+          <li>Chars: <code>'a'</code>, strings: <code>"x = @"</code></li>
+          <li>Identifiers: lowercase, digits, at most one <code>_</code></li>
+        </ul>
+      </div>
+      <div>
+        <b>Statements</b> (each ends with <code>;</code>)
+        <ul>
+          <li><code>x := e</code>, <code>+=</code>, <code>-=</code>, <code>*=</code>, <code>/=</code>, <code>%=</code></li>
+          <li><code>if (c) begin &hellip; end else begin &hellip; end</code></li>
+          <li><code>while (c) do begin &hellip; end</code></li>
+          <li><code>for i := e to e inc e do begin &hellip; end</code></li>
+          <li><code>print("v = @", v)</code>, <code>scan("@", v)</code></li>
+        </ul>
+      </div>
+      <div>
+        <b>Operators</b>
+        <ul>
+          <li>Arithmetic: <code>+ - * / %</code></li>
+          <li>Relational: <code>= &lt;&gt; &lt; &gt; &lt;= &gt;=</code></li>
+          <li>Comments: <code>// line</code>, <code>/* block */</code></li>
+        </ul>
+      </div>
+    </div>
+  </details>
+</div>
+
+<script>
+const EXAMPLES = {
+  "Factorial (for loop)": `begin program:
+begin VarDecl:
+(n, int);
+(i, int);
+(fact, int);
+end VarDecl
+/* factorial of n using a for loop */
+n := (6, 10);
+fact := (1, 10);
+for i := (1, 10) to n inc (1, 10) do
+begin
+    fact *= i;
+end;
+print("n! = @", fact);
+end program
+`,
+  "Countdown (while + for)": `begin program:
+begin VarDecl:
+(a, int);
+(b, int);
+(x, int);
+end VarDecl
+a := (10, 10);
+b := (5, 10);
+x := (3, 10);
+while (x > (0, 10)) do
+begin
+print("@", x);
+x := x - (1, 10);
+end;
+for a := a + (3, 10) to (1, 10) dec b - (2, 10) do
+begin
+print("a = @", a);
+end;
+end program
+`,
+  "Number bases": `begin program:
+begin VarDecl:
+(x, int);
+(y, int);
+(z, int);
+(binaryval, int);
+end VarDecl
+x := (10, 10);
+y := (11, 10);
+z := x + y;
+print("Sum = @", z);
+binaryval := (1010, 2);
+print("Binary value = @", binaryval);
+end program
+`,
+  "If / else": `begin program:
+begin VarDecl:
+(i, int);
+end VarDecl
+
+i := (5, 10);
+
+if (i > (10, 10))
+begin
+    i := i + (0, 10);
+    i := i + i;
+end
+else
+begin
+    i := (20, 10);
+end;
+end program
+`,
+  "Lexical errors": `// The lexer flags bad identifiers, constants and I/O statements
+begin program:
+begin VarDecl:
+(count, int);
+(count, char);
+(Total, int);
+(my_var_x, int);
+(while, int);
+(grade, float);
+end VarDecl
+count := (1012, 2);
+count := (777, 8);
+print("count = @, @", count);
+scan("@, @", count, grade);
+end program
+`,
+  "Type error": `begin program:
+begin VarDecl:
+(n, int);
+(c, char);
+end VarDecl
+c := 'x';
+n := (3, 10);
+n := n + c;
+end program
+`
+};
+
+const STAGES = [
+  { id: "lexer", label: "Tokens", desc: "Hand-written Flex scanner. Besides splitting the input into tokens it validates identifiers, based integer constants, declarations and print/scan format strings." },
+  { id: "parser", label: "Syntax", desc: "Bison LALR(1) parser for the full grammar. It either accepts the program or reports the first syntax error." },
+  { id: "ast", label: "AST", desc: "The parser builds an abstract syntax tree, shown here as a tree (the raw S-expression is below)." },
+  { id: "codegen", label: "Three-address code", desc: "Syntax-directed translation to three-address code with temporaries (t1, t2...) and labels (L1, L2...)." },
+  { id: "interpreter", label: "Run", desc: "Walks the AST with a symbol table, checking types and initialization, and executes the program." }
+];
+const TIMEOUT_MS = 3000;
+
+const $ = (s) => document.querySelector(s);
+const src = $("#src"), gutter = $("#gutter"), out = $("#out");
+const state = { tab: "lexer", results: {}, runId: 0, errLine: null, tokFilter: false };
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+/* ---------- theme ---------- */
+(function () {
+  let saved = null;
+  try { saved = localStorage.getItem("theme"); } catch (e) {}
+  if (saved) document.documentElement.dataset.theme = saved;
+  $("#theme").onclick = () => {
+    const cur = document.documentElement.dataset.theme ||
+      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const next = cur === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("theme", next); } catch (e) {}
+  };
+})();
+
+/* ---------- editor ---------- */
+function renderGutter() {
+  const n = src.value.split("\n").length;
+  let h = "";
+  for (let i = 1; i <= n; i++) h += `<div${i === state.errLine ? ' class="bad"' : ""}>${i}</div>`;
+  gutter.innerHTML = h;
+  gutter.scrollTop = src.scrollTop;
+}
+src.addEventListener("scroll", () => { gutter.scrollTop = src.scrollTop; });
+src.addEventListener("keydown", (e) => {
+  if (e.key === "Tab") {
+    e.preventDefault();
+    const s = src.selectionStart;
+    src.setRangeText("    ", s, src.selectionEnd, "end");
+    renderGutter();
+  } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault(); runAll();
+  }
+});
+let debounce;
+src.addEventListener("input", () => {
+  renderGutter();
+  clearTimeout(debounce);
+  debounce = setTimeout(runAll, 700);
+});
+
+const sel = $("#examples");
+for (const name of Object.keys(EXAMPLES)) sel.add(new Option(name, name));
+sel.onchange = () => { src.value = EXAMPLES[sel.value]; renderGutter(); runAll(); };
+
+/* ---------- running stages ---------- */
+function runStage(stage, code) {
+  return new Promise((resolve) => {
+    const w = new Worker("worker.js");
+    const timer = setTimeout(() => {
+      w.terminate();
+      resolve({ ok: false, timeout: true, lines: [] });
+    }, TIMEOUT_MS);
+    w.onmessage = (e) => { clearTimeout(timer); w.terminate(); resolve(e.data); };
+    w.onerror = (e) => { clearTimeout(timer); w.terminate(); resolve({ ok: false, error: e.message || "worker failed", lines: [] }); };
+    w.postMessage({ stage, code });
+  });
+}
+
+async function runAll() {
+  const id = ++state.runId;
+  const code = src.value;
+  state.results = {};
+  renderStages(true);
+  await Promise.all(STAGES.map(async (s) => {
+    const r = await runStage(s.id, code);
+    if (id !== state.runId) return;
+    state.results[s.id] = r;
+    renderStages();
+    if (s.id === state.tab) renderOut();
+  }));
+  if (id !== state.runId) return;
+  const m = errorLine();
+  state.errLine = m;
+  renderGutter();
+}
+$("#run").onclick = runAll;
+
+function text(r, stream) {
+  return (r.lines || []).filter(l => !stream || l.stream === stream).map(l => l.text).join("\n");
+}
+function failed(r) { return !r || !r.ok || r.status !== 0; }
+function errorLine() {
+  for (const id of ["parser", "ast", "interpreter"]) {
+    const r = state.results[id];
+    if (!r) continue;
+    const m = text(r).match(/at line (\d+)/);
+    if (m) return +m[1];
+  }
+  return null;
+}
+
+/* ---------- lexer output ---------- */
+const TOKEN_TYPES = [
+  ["Assignment operator", "t-op"], ["Relational operator", "t-op"], ["Arithmetic Operator", "t-op"],
+  ["Valid output statement", "t-io"], ["Valid input statement", "t-io"], ["Integer constant", "t-const"],
+  ["Array Length", "t-const"], ["Unrecognized token", "t-err"], ["Identifier", "t-ident"],
+  ["Keyword", "t-keyword"], ["Separator", "t-sep"]
+];
+function parseTokens(r) {
+  const lines = (r.lines || []).filter(l => l.stream === "out").map(l => l.text).slice(2);
+  const toks = [];
+  let buf = null;
+  for (const line of lines) {
+    let m = line.match(/^(.*?) (Error: .*)$/s);
+    let tok = null;
+    if (m) tok = { lex: m[1], type: m[2], cls: "t-err", err: true };
+    else for (const [t, cls] of TOKEN_TYPES) {
+      if (line.endsWith(" " + t)) { tok = { lex: line.slice(0, -t.length - 1), type: t, cls, err: cls === "t-err" }; break; }
+    }
+    if (tok) {
+      if (buf !== null) { tok.lex = buf + "\n" + tok.lex; buf = null; }
+      toks.push(tok);
+    } else {
+      // multi-line lexeme (e.g. a print statement spanning lines)
+      buf = buf === null ? line : buf + "\n" + line;
+    }
+  }
+  return toks;
+}
+function renderLexer(r) {
+  const toks = parseTokens(r);
+  const errs = toks.filter(t => t.err).length;
+  const shown = state.tokFilter ? toks.filter(t => t.err) : toks;
+  let h = errs
+    ? `<div class="banner err"><b>${errs} lexical error${errs > 1 ? "s" : ""}</b></div>`
+    : `<div class="banner ok"><b>No lexical errors</b></div>`;
+  const counts = {};
+  for (const t of toks) counts[t.err ? "Errors" : t.type] = (counts[t.err ? "Errors" : t.type] || 0) + 1;
+  h += `<div class="stats"><span class="stat"><b>${toks.length}</b> tokens</span>` +
+    Object.entries(counts).filter(([k]) => k !== "Errors").map(([k, v]) => `<span class="stat"><b>${v}</b> ${esc(k.toLowerCase())}</span>`).join("") + `</div>`;
+  h += `<table><thead><tr><th>#</th><th>Lexeme</th><th style="display:flex">Token type
+        <label class="filter"><input type="checkbox" id="onlyErr" ${state.tokFilter ? "checked" : ""}> errors only</label></th></tr></thead><tbody>`;
+  shown.forEach((t) => {
+    h += `<tr class="${t.err ? "bad" : ""}"><td class="mono" style="color:var(--muted)">${toks.indexOf(t) + 1}</td>
+      <td class="lex">${esc(t.lex)}</td><td><span class="pill ${t.cls}">${esc(t.type)}</span></td></tr>`;
+  });
+  h += `</tbody></table>`;
+  return h;
+}
+
+/* ---------- AST ---------- */
+// Parses the S-expression printed by printAST() into a tree.
+function parseSexpr(s) {
+  let i = 0;
+  const leafRe = [/^\(\d+,\s*\d+\)/, /^"[^"]*"/, /^'[^']'/];
+  function ws() { while (s[i] === " " || s[i] === "\n") i++; }
+  function item() {
+    ws();
+    const rest = s.slice(i);
+    for (const re of leafRe) { const m = rest.match(re); if (m) { i += m[0].length; return { leaf: m[0] }; } }
+    if (s[i] === "(") {
+      i++;
+      let label = "";
+      while (i < s.length && s[i] !== " " && s[i] !== ")") label += s[i++];
+      const kids = [];
+      for (;;) {
+        ws();
+        if (i >= s.length) break;
+        if (s[i] === ")") { i++; break; }
+        kids.push(item());
+      }
+      return { label, kids };
+    }
+    let w = "";
+    while (i < s.length && !" ()\n".includes(s[i])) w += s[i++];
+    return { leaf: w };
+  }
+  return item();
+}
+function flatten(n) {
+  if (n.leaf !== undefined || n.label !== "") return [n];
+  if (n.kids.length && n.kids.every(k => k.leaf !== undefined)) return [{ decl: n.kids.map(k => k.leaf) }];
+  return n.kids.flatMap(flatten);
+}
+const STMT = new Set(["if", "ifelse", "while", "for", "print", "SCAN", "inc", "dec"]);
+function nodeHtml(n, title) {
+  if (n.decl) {
+    const [id, ...rest] = n.decl;
+    const ty = rest.pop();
+    return `<li><span class="node decl">${esc(id)}${rest.length ? `[${esc(rest[0])}]` : ""} : <span class="ty">${esc(ty)}</span></span></li>`;
+  }
+  if (n.leaf !== undefined) return `<li><span class="node leaf">${esc(n.leaf)}</span></li>`;
+  const kids = n.kids.map((k) => (k.leaf === undefined && k.label === "") ? { label: "block", group: true, kids: k.kids.flatMap(flatten) } : k);
+  const cls = n.group ? "group" : STMT.has(n.label) ? "stmt" : "op";
+  const lbl = title || (n.label === "ifelse" ? "if-else" : n.label === "SCAN" ? "scan" : n.label);
+  return `<li><span class="node ${cls}">${esc(lbl)}</span><ul>${kids.map(k => nodeHtml(k)).join("")}</ul></li>`;
+}
+function renderAst(r) {
+  const all = text(r, "out");
+  const errs = text(r, "err");
+  if (failed(r)) return `<div class="banner err"><b>No AST</b><span class="mono">${esc(errs || "parse failed")}</span></div>`;
+  const sexpr = all.split("\n").filter(l => l.trim().startsWith("(")).join(" ");
+  let tree = "";
+  try {
+    const root = parseSexpr(sexpr);
+    const [decls, stmts] = root.kids;
+    const g = (label, node) => ({ label, group: true, kids: node ? flatten(node) : [] });
+    tree = `<ul class="tree">${nodeHtml({ label: "program", kids: [g("declarations", decls), g("statements", stmts)] })}</ul>`;
+  } catch (e) { tree = `<p class="desc">Could not draw the tree.</p>`; }
+  return `<div class="banner ok"><b>Parsed</b></div>${tree}
+    <details class="raw"><summary>Raw S-expression</summary><pre class="code">${esc(sexpr)}</pre></details>`;
+}
+
+/* ---------- three-address code ---------- */
+function renderTac(r) {
+  const lines = text(r, "out");
+  const errs = text(r, "err");
+  if (failed(r)) return `<div class="banner err"><b>Code generation stopped</b><span class="mono">${esc(errs)}</span></div>`;
+  const n = lines.split("\n").filter(l => l.trim() && !/^L\d+:$/.test(l)).length;
+  const hl = esc(lines)
+    .replace(/^(L\d+:)$/gm, '<span class="lbl">$1</span>')
+    .replace(/\b(goto|if|param|call)\b/g, '<span class="kw">$1</span>')
+    .replace(/\b(L\d+)\b(?!:)/g, '<span class="lbl">$1</span>')
+    .replace(/\b(t\d+)\b/g, '<span class="tmp">$1</span>')
+    .replace(/(&quot;[^&]*&quot;)/g, '<span class="str">$1</span>');
+  return `<div class="banner ok"><b>${n} instructions</b></div><pre class="code">${hl || "(no statements)"}</pre>`;
+}
+
+/* ---------- interpreter ---------- */
+function renderRun(r) {
+  if (r.timeout) return `<div class="banner err"><b>Stopped after ${TIMEOUT_MS / 1000}s</b><span>The program is probably stuck in an infinite loop.</span></div>`;
+  const lines = text(r, "out").split("\n");
+  const errs = text(r, "err");
+  const start = lines.findIndex(l => l.startsWith("Parsing successful"));
+  const tblAt = lines.findIndex(l => l.startsWith("=== Symbol Table ==="));
+  const progOut = lines.slice(start + 1, tblAt === -1 ? undefined : tblAt).join("\n").replace(/^\n+|\n+$/g, "");
+  let h = failed(r)
+    ? `<div class="banner err"><b>${start === -1 ? "Did not run" : "Runtime / semantic error"}</b><span class="mono">${esc(errs || r.error || "")}</span></div>`
+    : `<div class="banner ok"><b>Finished</b></div>`;
+  if (/\bscan\s*\(/.test(src.value)) h += `<p class="note">scan statements are parsed but not executed by the interpreter.</p>`;
+  if (start !== -1) h += `<h3>Program output</h3><pre class="console">${progOut ? esc(progOut) : '<span class="none">(nothing printed)</span>'}</pre>`;
+  if (tblAt !== -1) {
+    const rows = lines.slice(tblAt + 3).filter(l => l.includes("|"));
+    h += `<h3>Symbol table</h3><table><thead><tr><th>Name</th><th>Type</th><th>Initialized</th><th>Value</th></tr></thead><tbody>`;
+    for (const row of rows.reverse()) {
+      const c = row.split("|").map(x => x.trim());
+      h += `<tr><td class="lex">${esc(c[0])}</td><td><span class="pill t-keyword">${esc(c[1])}</span></td><td>${esc(c[2])}</td><td class="lex">${esc(c.slice(3).join("|"))}</td></tr>`;
+    }
+    h += `</tbody></table>`;
+  }
+  return h;
+}
+
+/* ---------- syntax ---------- */
+function renderParser(r) {
+  const all = text(r);
+  if (!failed(r)) return `<div class="banner ok"><b>Valid program</b><span>The parser accepted the input.</span></div>`;
+  const ln = all.match(/at line (\d+)/);
+  return `<div class="banner err"><b>Syntax error${ln ? ` on line ${ln[1]}` : ""}</b></div><pre class="code">${esc(all)}</pre>`;
+}
+
+/* ---------- rendering ---------- */
+function status(id) {
+  const r = state.results[id];
+  if (!r) return "busy";
+  if (id === "lexer") return parseTokens(r).some(t => t.err) || failed(r) ? "err" : "ok";
+  return failed(r) ? "err" : "ok";
+}
+function renderStages(busy) {
+  $("#stages").innerHTML = STAGES.map((s, i) => `${i ? '<span class="arrow">&rsaquo;</span>' : ""}<button class="stage" role="tab" data-id="${s.id}" aria-selected="${s.id === state.tab}">
+      <span class="dot ${busy ? "busy" : status(s.id)}"></span><span class="n">${i + 1}</span>${s.label}</button>`).join("");
+  document.querySelectorAll(".stage").forEach(b => b.onclick = () => { state.tab = b.dataset.id; renderStages(); renderOut(); });
+}
+function renderOut() {
+  const s = STAGES.find(x => x.id === state.tab);
+  const r = state.results[s.id];
+  let h = `<p class="desc">${s.desc}</p>`;
+  if (!r) h += `<p class="desc">Running&hellip;</p>`;
+  else if (r.error && !r.lines.length) h += `<div class="banner err"><b>Failed to run</b><span>${esc(r.error)}</span></div>`;
+  else if (r.timeout && s.id !== "interpreter") h += `<div class="banner err"><b>Timed out</b></div>`;
+  else h += ({ lexer: renderLexer, parser: renderParser, ast: renderAst, codegen: renderTac, interpreter: renderRun })[s.id](r);
+  out.innerHTML = h;
+  const cb = $("#onlyErr");
+  if (cb) cb.onchange = () => { state.tokFilter = cb.checked; renderOut(); };
+}
+
+src.value = EXAMPLES[sel.value];
+renderGutter();
+renderStages(true);
+renderOut();
+runAll();
+</script>
+</body>
+</html>
