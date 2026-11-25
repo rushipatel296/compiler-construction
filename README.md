@@ -4,6 +4,8 @@ A small compiler for a toy Pascal-ish language, built with Flex, Bison and C. It
 
 **Try it in the browser:** https://rushipatel296.github.io/compiler-construction/
 
+[![Compiler Playground](docs/screenshot.png)](https://rushipatel296.github.io/compiler-construction/)
+
 The playground runs the actual C code, compiled to WebAssembly, so what you see there is exactly what the native binaries print.
 
 ## What the language looks like
